@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Resume Skill Extractor</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:wght@300;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <header class="header">
+      <h1>Resume skill extractor</h1>
+      <span class="tag">AI-powered</span>
+    </header>
+
+    <!-- Upload Section -->
+    <section class="input-section">
+
+      <!-- Drop Zone -->
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="pdf-input" accept=".pdf" hidden />
+        <div class="drop-icon">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="30" height="30" rx="5" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/>
+            <path d="M18 24V12M18 12L13 17M18 12L23 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p class="drop-title">Drop your resume PDF here</p>
+        <p class="drop-sub">or <span class="drop-link" id="browse-btn">browse to upload</span></p>
+        <p class="drop-hint">PDF only &middot; max 10 MB</p>
+      </div>
+
+      <!-- File Preview -->
+      <div class="file-preview" id="file-preview" style="display:none;">
+        <div class="file-info">
+          <div class="file-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 2h8l4 4v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              <path d="M11 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              <path d="M6 9h6M6 12h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="file-meta">
+            <span class="file-name" id="file-name">resume.pdf</span>
+            <span class="file-size" id="file-size"></span>
+          </div>
+        </div>
+        <button class="btn-remove" id="remove-btn" title="Remove">&#x2715;</button>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-row">
+        <button class="btn-extract" id="extract-btn" disabled>Extract skills</button>
+        <span class="status-hint" id="status-hint">Upload a PDF to begin</span>
+      </div>
+
+      <!-- Loading Bar -->
+      <div class="loading-bar" id="loading-bar">
+        <div class="loading-fill"></div>
+      </div>
+
+      <!-- Error -->
+      <div class="error-msg" id="error-msg"></div>
+
+    </section>
+
+    <!-- Results -->
+    <section class="results" id="results" style="display:none;">
+
+      <div class="results-header">Extracted skills</div>
+
+      <div class="summary-card">
+        <p id="summary-text"></p>
+      </div>
+
+      <div class="stat-row" id="stat-row"></div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot dot-technical"></div>Technical</div>
+        <div class="legend-item"><div class="legend-dot dot-soft"></div>Soft skills</div>
+        <div class="legend-item"><div class="legend-dot dot-tools"></div>Tools &amp; platforms</div>
+        <div class="legend-item"><div class="legend-dot dot-domain"></div>Domain knowledge</div>
+      </div>
+
+      <div id="skills-output"></div>
+
+      <div class="copy-row">
+        <button class="btn-copy" id="copy-skills-btn">Copy all skills</button>
+        <button class="btn-copy" id="copy-json-btn">Copy as JSON</button>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
