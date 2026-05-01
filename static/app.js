@@ -1,108 +1,141 @@
 /* =====================
-   PDF.js CONFIG
+   HELPERS
 ===================== */
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const ALLOWED_EXTS = ["pdf", "txt", "docx"];
+
+function getExt(filename) {
+  return filename.split(".").pop().toLowerCase();
+}
+
+function isAllowed(file) {
+  return ALLOWED_EXTS.includes(getExt(file.name));
+}
+
+function fileIcon(file) {
+  const ext = getExt(file.name);
+  if (ext === "pdf")  return "📄";
+  if (ext === "txt")  return "📝";
+  if (ext === "docx") return "📃";
+  return "📄";
+}
+
+function formatBytes(b) {
+  if (b < 1024)        return b + " B";
+  if (b < 1048576)     return (b / 1024).toFixed(1) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+
+function escapeHTML(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g,  "&lt;")
+    .replace(/>/g,  "&gt;")
+    .replace(/"/g,  "&quot;");
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function hideError(id) {
+  document.getElementById(id).style.display = "none";
+}
+
+function setLoading(barId, on) {
+  document.getElementById(barId).classList.toggle("active", on);
+}
 
 /* =====================
    STATE
 ===================== */
 
-let selectedFile = null;
-let extractedData = null;
+let selectedFile    = null;
+let extractedData   = null;
+let resumeUploaded  = false;  // tracks whether a resume is in the vector DB
 
 /* =====================
-   DOM ELEMENTS
+   DOM REFS
 ===================== */
 
-const dropZone      = document.getElementById("drop-zone");
-const pdfInput      = document.getElementById("pdf-input");
-const browseBtn     = document.getElementById("browse-btn");
-const filePreview   = document.getElementById("file-preview");
-const fileNameEl    = document.getElementById("file-name");
-const fileSizeEl    = document.getElementById("file-size");
-const removeBtn     = document.getElementById("remove-btn");
-const extractBtn    = document.getElementById("extract-btn");
-const statusHint    = document.getElementById("status-hint");
-const loadingBar    = document.getElementById("loading-bar");
-const errorMsg      = document.getElementById("error-msg");
-const resultsEl     = document.getElementById("results");
-const summaryText   = document.getElementById("summary-text");
-const statRow       = document.getElementById("stat-row");
-const skillsOutput  = document.getElementById("skills-output");
-const copySkillsBtn = document.getElementById("copy-skills-btn");
-const copyJsonBtn   = document.getElementById("copy-json-btn");
+const dropZone    = document.getElementById("drop-zone");
+const fileInput   = document.getElementById("file-input");
+const browseBtn   = document.getElementById("browse-btn");
+const filePreview = document.getElementById("file-preview");
+const fileNameEl  = document.getElementById("file-name");
+const fileSizeEl  = document.getElementById("file-size");
+const fileIconEl  = document.getElementById("file-type-icon");
+const removeBtn   = document.getElementById("remove-btn");
+const extractBtn  = document.getElementById("extract-btn");
+const statusHint  = document.getElementById("status-hint");
+const resultsEl   = document.getElementById("results");
+const summaryEl   = document.getElementById("summary-text");
+const statRowEl   = document.getElementById("stat-row");
+const skillsOut   = document.getElementById("skills-output");
+const ragSection  = document.getElementById("rag-section");
+const matchSection= document.getElementById("match-section");
 
 /* =====================
-   FILE SELECTION
+   FILE UPLOAD WIRING
 ===================== */
 
-browseBtn.addEventListener("click", () => pdfInput.click());
-
-dropZone.addEventListener("click", (e) => {
-  if (e.target !== browseBtn) pdfInput.click();
+// "browse to upload" span click
+browseBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  fileInput.click();
 });
 
-pdfInput.addEventListener("change", () => {
-  if (pdfInput.files[0]) handleFile(pdfInput.files[0]);
+// clicking the drop zone itself
+dropZone.addEventListener("click", () => fileInput.click());
+
+// native file picker change
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
 });
 
-/* =====================
-   DRAG & DROP
-===================== */
-
+// drag-and-drop
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
   dropZone.classList.add("drag-over");
 });
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("drag-over");
-});
-
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
 dropZone.addEventListener("drop", (e) => {
   e.preventDefault();
   dropZone.classList.remove("drag-over");
-
-  const file = e.dataTransfer.files[0];
-
-  if (file && file.type === "application/pdf") {
-    handleFile(file);
-  } else {
-    showError("Please drop a valid PDF file.");
-  }
+  const f = e.dataTransfer.files[0];
+  if (f && isAllowed(f)) handleFile(f);
+  else showError("extract-error", "Unsupported file. Please use PDF, TXT, or DOCX.");
 });
 
 /* =====================
    HANDLE FILE
 ===================== */
 
-function handleFile(file){
-
-  if(file.type !== "application/pdf"){
-    showError("Only PDF files are supported.");
+function handleFile(file) {
+  if (!isAllowed(file)) {
+    showError("extract-error", "Unsupported file type. Use PDF, TXT, or DOCX.");
     return;
   }
-
-  if(file.size > 10 * 1024 * 1024){
-    showError("File too large (max 10MB).");
+  if (file.size > 10 * 1024 * 1024) {
+    showError("extract-error", "File too large (max 10 MB).");
     return;
   }
 
   selectedFile = file;
-
-  hideError();
+  hideError("extract-error");
   resetResults();
 
   fileNameEl.textContent = file.name;
   fileSizeEl.textContent = formatBytes(file.size);
+  fileIconEl.textContent = fileIcon(file);
 
   filePreview.style.display = "flex";
-  dropZone.style.display = "none";
+  dropZone.style.display    = "none";
 
-  extractBtn.disabled = false;
-  statusHint.textContent = "Ready to extract";
+  extractBtn.disabled      = false;
+  statusHint.textContent   = "Ready to extract";
 }
 
 /* =====================
@@ -110,219 +143,230 @@ function handleFile(file){
 ===================== */
 
 removeBtn.addEventListener("click", () => {
-
   selectedFile = null;
-  pdfInput.value = "";
+  fileInput.value = "";
 
   filePreview.style.display = "none";
-  dropZone.style.display = "block";
+  dropZone.style.display    = "block";
 
-  extractBtn.disabled = true;
-  statusHint.textContent = "Upload a PDF to begin";
+  extractBtn.disabled     = true;
+  statusHint.textContent  = "Upload a file to begin";
 
-  hideError();
+  hideError("extract-error");
   resetResults();
 });
 
 /* =====================
-   EXTRACT BUTTON
+   EXTRACT SKILLS
 ===================== */
 
-extractBtn.addEventListener("click", runExtraction);
+extractBtn.addEventListener("click", async () => {
+  if (!selectedFile) return;
 
-async function runExtraction(){
+  extractBtn.disabled    = true;
+  extractBtn.textContent = "Extracting…";
+  statusHint.textContent = "Analysing resume…";
+  setLoading("loading-bar", true);
+  hideError("extract-error");
 
-  if(!selectedFile) return;
+  const fd = new FormData();
+  fd.append("resume", selectedFile);
 
-  setLoading(true, "Uploading resume...");
+  try {
+    const res  = await fetch("/extract", { method: "POST", body: fd });
+    const data = await res.json();
 
-  const formData = new FormData();
-  formData.append("resume", selectedFile);
+    if (data.error) throw new Error(data.error);
 
-  try{
+    extractedData  = data;
+    resumeUploaded = true;
 
-    const response = await fetch("/extract", {
-      method:"POST",
-      body: formData
-    });
+    renderSkills(data);
 
-    if(!response.ok){
-      throw new Error("Server error while processing resume.");
-    }
+    // Show RAG and match sections after successful upload
+    ragSection.style.display   = "block";
+    matchSection.style.display = "block";
 
-    const data = await response.json();
-
-    extractedData = data;
-
-    renderResults(data);
-
-  }catch(err){
-
-    showError(err.message);
-
-  }finally{
-
-    setLoading(false);
+  } catch (err) {
+    showError("extract-error", err.message);
+  } finally {
+    extractBtn.disabled    = false;
+    extractBtn.textContent = "Extract skills";
+    statusHint.textContent = "Ready to extract";
+    setLoading("loading-bar", false);
   }
-}
+});
 
 /* =====================
-   RENDER RESULTS
+   RENDER SKILLS
 ===================== */
 
-function renderResults(data){
+function renderSkills(data) {
+  summaryEl.textContent = data.summary || "No summary available.";
 
-  summaryText.textContent = data.summary || "";
+  const total   = ["technical","soft","tools","domain"].reduce((s,k) => s + (data[k]||[]).length, 0);
+  const techNum = (data.technical||[]).length + (data.tools||[]).length;
+  const nonTech = (data.soft||[]).length + (data.domain||[]).length;
 
-  const categories = ["technical","soft","tools","domain"];
-
-  const total = categories.reduce((sum,k)=>sum+(data[k]||[]).length,0);
-
-  const techNum = (data.technical || []).length + (data.tools || []).length;
-  const nonTech = (data.soft || []).length + (data.domain || []).length;
-
-  statRow.innerHTML = `
-  <div class="stat-cell">
-  <div class="num">${total}</div>
-  <div class="lbl">Total skills</div>
-  </div>
-
-  <div class="stat-cell">
-  <div class="num">${techNum}</div>
-  <div class="lbl">Technical</div>
-  </div>
-
-  <div class="stat-cell">
-  <div class="num">${nonTech}</div>
-  <div class="lbl">Non-technical</div>
-  </div>
+  statRowEl.innerHTML = `
+    <div class="stat-cell"><div class="num">${total}</div><div class="lbl">Total</div></div>
+    <div class="stat-cell"><div class="num">${techNum}</div><div class="lbl">Technical</div></div>
+    <div class="stat-cell"><div class="num">${nonTech}</div><div class="lbl">Non-technical</div></div>
   `;
 
-  const catConfig = [
-    {key:"technical", label:"Technical"},
-    {key:"soft", label:"Soft Skills"},
-    {key:"tools", label:"Tools & Platforms"},
-    {key:"domain", label:"Domain Knowledge"}
+  const cats = [
+    { key: "technical", label: "Technical" },
+    { key: "soft",      label: "Soft Skills" },
+    { key: "tools",     label: "Tools & Platforms" },
+    { key: "domain",    label: "Domain Knowledge" }
   ];
 
-  skillsOutput.innerHTML = "";
+  skillsOut.innerHTML = "";
 
-  catConfig.forEach(({key,label})=>{
-
+  cats.forEach(({ key, label }) => {
     const skills = data[key] || [];
-
-    if(!skills.length) return;
-
+    if (!skills.length) return;
     const block = document.createElement("div");
-
     block.className = "category-block";
-
     block.innerHTML = `
-    <div class="cat-label">${label}</div>
-    <div class="pill-row">
-      ${skills.map(s => `<span class="pill ${key}">${escapeHTML(s)}</span>`).join("")}
-    </div>
-    `;
-
-    skillsOutput.appendChild(block);
-
+      <div class="cat-label">${label}</div>
+      <div class="pill-row">
+        ${skills.map(s => `<span class="pill ${key}">${escapeHTML(s)}</span>`).join("")}
+      </div>`;
+    skillsOut.appendChild(block);
   });
 
   resultsEl.style.display = "block";
-
-  resultsEl.scrollIntoView({behavior:"smooth"});
+  resultsEl.scrollIntoView({ behavior: "smooth" });
 }
 
 /* =====================
    COPY BUTTONS
 ===================== */
 
-copySkillsBtn.addEventListener("click", () => {
-
-  if(!extractedData) return;
-
-  const allSkills = ["technical","soft","tools","domain"]
-  .flatMap(k => extractedData[k] || []);
-
-  copyText(allSkills.join(", "), copySkillsBtn);
+document.getElementById("copy-skills-btn").addEventListener("click", () => {
+  if (!extractedData) return;
+  const all = ["technical","soft","tools","domain"].flatMap(k => extractedData[k] || []);
+  copyText(all.join(", "), "copy-skills-btn");
 });
 
-copyJsonBtn.addEventListener("click", () => {
-
-  if(!extractedData) return;
-
-  copyText(JSON.stringify(extractedData,null,2), copyJsonBtn);
+document.getElementById("copy-json-btn").addEventListener("click", () => {
+  if (!extractedData) return;
+  copyText(JSON.stringify(extractedData, null, 2), "copy-json-btn");
 });
 
-function copyText(text,btn){
-
-  navigator.clipboard.writeText(text).then(()=>{
-
-    const original = btn.textContent;
-
+function copyText(text, btnId) {
+  navigator.clipboard.writeText(text).then(() => {
+    const btn  = document.getElementById(btnId);
+    const orig = btn.textContent;
     btn.textContent = "Copied!";
     btn.classList.add("copied");
-
-    setTimeout(()=>{
-      btn.textContent = original;
-      btn.classList.remove("copied");
-    },1800);
-
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1800);
   });
 }
 
 /* =====================
-   HELPERS
+   RESET
 ===================== */
 
-function setLoading(on, hint=""){
+function resetResults() {
+  extractedData = null;
+  resultsEl.style.display    = "none";
+  ragSection.style.display   = "none";
+  matchSection.style.display = "none";
+  skillsOut.innerHTML        = "";
+  statRowEl.innerHTML        = "";
+  summaryEl.textContent      = "";
 
-  extractBtn.disabled = on;
-  extractBtn.textContent = on ? "Extracting..." : "Extract skills";
+  // Clear RAG/match answers
+  document.getElementById("rag-answer").style.display      = "none";
+  document.getElementById("rag-answer-text").textContent   = "";
+  document.getElementById("match-result-box").style.display = "none";
+  document.getElementById("match-result-text").textContent  = "";
+}
 
-  loadingBar.classList.toggle("active", on);
+/* =====================
+   RAG — ASK QUESTION
+===================== */
 
-  if(hint) statusHint.textContent = hint;
+document.getElementById("rag-ask-btn").addEventListener("click", askQuestion);
 
-  if(!on){
-    statusHint.textContent = selectedFile ? "Ready to extract" : "Upload a PDF to begin";
+// Also allow pressing Enter in the input field
+document.getElementById("rag-question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") askQuestion();
+});
+
+async function askQuestion() {
+  const question = document.getElementById("rag-question").value.trim();
+  if (!question) return;
+
+  const askBtn = document.getElementById("rag-ask-btn");
+  askBtn.disabled    = true;
+  askBtn.textContent = "Asking…";
+  setLoading("rag-loading-bar", true);
+
+  document.getElementById("rag-answer").style.display = "none";
+
+  try {
+    const res  = await fetch("/ask", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ question })
+    });
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    document.getElementById("rag-answer-text").textContent = data.answer;
+    document.getElementById("rag-answer").style.display    = "block";
+
+  } catch (err) {
+    document.getElementById("rag-answer-text").textContent = "Error: " + err.message;
+    document.getElementById("rag-answer").style.display    = "block";
+  } finally {
+    askBtn.disabled    = false;
+    askBtn.textContent = "Ask";
+    setLoading("rag-loading-bar", false);
   }
 }
 
-function showError(msg){
+/* =====================
+   JOB MATCH
+===================== */
 
-  errorMsg.textContent = msg;
-  errorMsg.style.display = "block";
-}
+document.getElementById("match-btn").addEventListener("click", matchJob);
 
-function hideError(){
+async function matchJob() {
+  const job = document.getElementById("job-desc").value.trim();
+  if (!job) return;
 
-  errorMsg.style.display = "none";
-}
+  const matchBtn = document.getElementById("match-btn");
+  matchBtn.disabled    = true;
+  matchBtn.textContent = "Checking…";
+  setLoading("match-loading-bar", true);
 
-function resetResults(){
+  document.getElementById("match-result-box").style.display = "none";
 
-  extractedData = null;
+  try {
+    const res  = await fetch("/match", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ job })
+    });
+    const data = await res.json();
 
-  resultsEl.style.display = "none";
-  skillsOutput.innerHTML = "";
-  statRow.innerHTML = "";
-  summaryText.textContent = "";
-}
+    if (data.error) throw new Error(data.error);
 
-function formatBytes(bytes){
+    document.getElementById("match-result-text").textContent = data.result;
+    document.getElementById("match-result-box").style.display = "block";
+    document.getElementById("match-result-box").scrollIntoView({ behavior: "smooth" });
 
-  if(bytes < 1024) return bytes + " B";
-  if(bytes < 1024 * 1024) return (bytes/1024).toFixed(1) + " KB";
-
-  return (bytes/(1024*1024)).toFixed(1) + " MB";
-}
-
-function escapeHTML(str){
-
-  return str
-  .replace(/&/g,"&amp;")
-  .replace(/</g,"&lt;")
-  .replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;");
+  } catch (err) {
+    document.getElementById("match-result-text").textContent = "Error: " + err.message;
+    document.getElementById("match-result-box").style.display = "block";
+  } finally {
+    matchBtn.disabled    = false;
+    matchBtn.textContent = "Check fit";
+    setLoading("match-loading-bar", false);
+  }
 }

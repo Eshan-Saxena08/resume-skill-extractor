@@ -1,22 +1,29 @@
+from dotenv import load_dotenv
+load_dotenv()
 import fitz
 from groq import Groq
-client = Groq(api_key="YOUR_GROQ_API")
+import os
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 def extract_text_from_pdf(pdf_path):
+
     text = ""
     doc = fitz.open(pdf_path)
+
     for page in doc:
         text += page.get_text()
+
     return text
 
 
 def extract_resume_data(resume_text):
 
     prompt = f"""
-Extract skills from the resume.
+Extract all skills from the resume.
 
-Return ONLY JSON in this format:
+Return ONLY JSON:
 
 {{
  "summary": "",
@@ -32,16 +39,16 @@ Resume:
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}]
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
 
         return response.choices[0].message.content
 
-    except Exception as e:
-        # Return valid JSON instead of crashing Flask
+    except:
         return """{
- "summary": "LLM request failed",
+ "summary": "LLM failed",
  "technical": [],
  "soft": [],
  "tools": [],
